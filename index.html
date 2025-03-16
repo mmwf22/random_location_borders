@@ -38,7 +38,7 @@
   <h1>Zufällige Kartenposition</h1>
   <form id="coordinatesForm">
     <div>
-      <label for="countrySelect">Land auswählen (Europa):</label>
+      <label for="countrySelect">Land auswählen:</label>
       <select id="countrySelect">
         <option value="">-- Kein Land (benutzerdefiniert) --</option>
       </select>
@@ -75,26 +75,26 @@
   <!-- Turf.js zur Überprüfung, ob ein Punkt in einem Polygon liegt -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script>
-    let europeGeojson = null;
+    let worldGeojson = null;
     let countryFeatures = {};
     let selectedCountryFeature = null;
     let countryLayer = null;
     
-    // Karte initialisieren – Mittelpunkt in Europa
-    const map = L.map('map').setView([54, 15], 4);
+    // Karte initialisieren – globale Ansicht
+    const map = L.map('map').setView([20, 0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
     
-    // Lade GeoJSON-Daten der europäischen Länder
-    fetch('https://raw.githubusercontent.com/leakyMirror/map-of-europe/master/GeoJSON/europe.geojson')
+    // Lade globales GeoJSON-Dataset (alle Länder)
+    fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
       .then(response => response.json())
       .then(data => {
-        europeGeojson = data;
+        worldGeojson = data;
         const countrySelect = document.getElementById('countrySelect');
         data.features.forEach(feature => {
-          // Versuche, den Ländernamen aus verschiedenen Properties zu beziehen
-          const countryName = feature.properties.name || feature.properties.NAME || feature.properties.admin || "";
+          // Versuche, den Ländernamen aus unterschiedlichen Properties zu beziehen
+          const countryName = feature.properties.ADMIN || feature.properties.name || feature.properties.admin || "";
           if (countryName.trim() !== "") {
             countryFeatures[countryName] = feature;
             const option = document.createElement('option');
@@ -104,7 +104,7 @@
           }
         });
       })
-      .catch(error => console.error('Fehler beim Laden der GeoJSON:', error));
+      .catch(error => console.error('Fehler beim Laden des GeoJSON:', error));
     
     // Bei Auswahl eines Landes: Zeige die exakte Kontur und aktualisiere die Eingabefelder
     document.getElementById('countrySelect').addEventListener('change', function() {
