@@ -5,78 +5,109 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Zufällige Kartenposition</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-  <!-- Choices.js CSS für durchsuchbares Dropdown -->
+  <!-- Choices.js CSS für durchsuchbare Dropdowns -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
   <style>
     body {
       font-family: Arial, sans-serif;
-      text-align: center;
       margin: 0;
       padding: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
-    form {
-      margin: 20px;
+    /* Container für die gesamte Seite */
+    .container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
     }
-    label, input, select {
-      margin: 5px;
+    /* Sidebar links für Formular und Auswahl */
+    .sidebar {
+      width: 300px;
+      padding: 15px;
+      box-sizing: border-box;
+      background-color: #f8f8f8;
+      overflow-y: auto;
+      border-right: 1px solid #ccc;
+    }
+    /* Rechte Seite für die Karte */
+    .map-container {
+      flex: 1;
+      position: relative;
     }
     #map {
-      width: 80%;
-      height: 500px;
-      margin: auto;
-      border: 1px solid #ccc;
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
     }
+    /* Zusätzliche Elemente */
     #result, #mouseCoordinates {
-      margin: 10px;
+      margin-top: 10px;
       font-weight: bold;
     }
     #mouseCoordinates {
       font-family: monospace;
     }
+    /* Formularfelder */
+    label, input, select {
+      display: block;
+      margin-bottom: 10px;
+      width: 100%;
+    }
+    button {
+      width: 100%;
+      padding: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
   </style>
   <link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
 <body>
-  <h1>Zufällige Kartenposition</h1>
-  <form id="coordinatesForm">
-    <div>
-      <label for="countrySelect">Land auswählen:</label>
-      <select id="countrySelect">
-        <option value="">-- Kein Land (benutzerdefiniert) --</option>
-      </select>
+  <div class="container">
+    <!-- Sidebar links -->
+    <div class="sidebar">
+      <h2>Zufällige Kartenposition</h2>
+      <form id="coordinatesForm">
+        <div>
+          <label for="countrySelect">Land auswählen:</label>
+          <select id="countrySelect">
+            <option value="">-- Kein Land (benutzerdefiniert) --</option>
+          </select>
+        </div>
+        <div>
+          <label for="lat_min">Minimale Breite (-90 bis 90):</label>
+          <input id="lat_min" type="number" step="0.01" name="lat_min" value="" required>
+        </div>
+        <div>
+          <label for="lat_max">Maximale Breite (-90 bis 90):</label>
+          <input id="lat_max" type="number" step="0.01" name="lat_max" value="" required>
+        </div>
+        <div>
+          <label for="lon_min">Minimale Länge (-180 bis 180):</label>
+          <input id="lon_min" type="number" step="0.01" name="lon_min" value="" required>
+        </div>
+        <div>
+          <label for="lon_max">Maximale Länge (-180 bis 180):</label>
+          <input id="lon_max" type="number" step="0.01" name="lon_max" value="" required>
+        </div>
+        <button type="submit">Zufällige Position generieren</button>
+      </form>
+      <div id="result">Zufällige Position: --</div>
+      <div id="mouseCoordinates">Mouse: --</div>
     </div>
-    <div>
-      <label>
-        Minimale Breite (-90 bis 90):
-        <input id="lat_min" type="number" step="0.01" name="lat_min" value="" required>
-      </label>
-      <label>
-        Maximale Breite (-90 bis 90):
-        <input id="lat_max" type="number" step="0.01" name="lat_max" value="" required>
-      </label>
+    <!-- Map Container rechts -->
+    <div class="map-container">
+      <div id="map"></div>
     </div>
-    <div>
-      <label>
-        Minimale Länge (-180 bis 180):
-        <input id="lon_min" type="number" step="0.01" name="lon_min" value="" required>
-      </label>
-      <label>
-        Maximale Länge (-180 bis 180):
-        <input id="lon_max" type="number" step="0.01" name="lon_max" value="" required>
-      </label>
-    </div>
-    <button type="submit">Zufällige Position generieren</button>
-  </form>
+  </div>
   
-  <div id="map"></div>
-  <div id="mouseCoordinates">Mouse: --</div>
-  <p id="result"></p>
-  
-  <!-- Leaflet -->
+  <!-- Externe Bibliotheken -->
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-  <!-- Choices.js für durchsuchbare Dropdowns -->
   <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
-  <!-- Turf.js zur Überprüfung, ob ein Punkt in einem Polygon liegt -->
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
   <script>
     let worldGeojson = null;
@@ -95,11 +126,10 @@
       .then(response => response.json())
       .then(data => {
         worldGeojson = data;
-        // Gruppiere Länder nach Kontinent (falls vorhanden)
         let groups = {};
         data.features.forEach(feature => {
           const countryName = feature.properties.ADMIN || feature.properties.name || feature.properties.admin || "";
-          // Nutze CONTINENT, wenn vorhanden, sonst "Other"
+          // Verwende CONTINENT, wenn vorhanden, sonst "Other"
           const continent = feature.properties.CONTINENT || "Other";
           if (countryName.trim() !== "") {
             if (!groups[continent]) groups[continent] = [];
@@ -107,7 +137,7 @@
             countryFeatures[countryName] = feature;
           }
         });
-        // Sortiere die Länder in jeder Gruppe alphabetisch
+        // Länder in jeder Gruppe alphabetisch sortieren
         for (let cont in groups) {
           groups[cont].sort((a, b) => a.name.localeCompare(b.name));
         }
@@ -125,7 +155,7 @@
           });
           countrySelect.appendChild(optgroup);
         });
-        // Initialisiere Choices.js, um das Dropdown durchsuchbar zu machen
+        // Initialisiere Choices.js für durchsuchbares Dropdown
         new Choices(countrySelect, { searchEnabled: true, itemSelectText: '' });
       })
       .catch(error => console.error('Fehler beim Laden des GeoJSON:', error));
