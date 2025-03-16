@@ -76,6 +76,13 @@
     #mouseCoordinates {
       font-family: monospace;
     }
+    /* Export Button */
+    .export-btn {
+      margin-top: 10px;
+      background: #008CBA;
+      color: #fff;
+      border: none;
+    }
   </style>
   <link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
@@ -98,10 +105,12 @@
         <label for="lon_max">Maximum Longitude (-180 to 180):</label>
         <input id="lon_max" type="number" step="0.01" name="lon_max" value="180" required>
         <button type="submit">Generate Random Position</button>
+        <form id="coordinatesForm"></form>
       </form>
       <button id="addMarkerBtn">Add Random Position</button>
       <button id="clearMarkersBtn">Clear Markers</button>
       <button id="resetMapBtn">Reset Map</button>
+      <button id="exportGeoJSONBtn" class="export-btn">Export as GeoJSON</button>
       
       <div class="slider-group">
         <label for="opacitySlider">Polygon Opacity (0-1): <span id="opacityVal">0.1</span></label>
@@ -137,90 +146,62 @@
     let customRectangle = null;
     let markers = [];
     
-    // Use the default Leaflet marker.
+    // Verwende den Standard-Leaflet-Marker.
     function createCustomMarker(lat, lon) {
       return L.marker([lat, lon]);
     }
     
-    // Initialize map with multiple base layers.
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
-    });
-    const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenTopoMap contributors'
-    });
-    const toner = L.tileLayer('https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png', {
-      attribution: 'Map tiles by Stamen Design'
-    });
-    const watercolor = L.tileLayer('https://stamen-tiles.a.ssl.fastly.net/watercolor/{z}/{x}/{y}.jpg', {
-      attribution: 'Map tiles by Stamen Design'
-    });
-    
-    const map = L.map('map', {
-      center: [20, 0],
-      zoom: 2,
-      layers: [osm]
-    });
-    
-    // Base layer switcher.
-    const baseLayers = {
-      "OpenStreetMap": osm,
-      "OpenTopoMap": topo,
-      "Stamen Toner": toner,
-      "Stamen Watercolor": watercolor
-    };
+    // Map-Initialisierung
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' });
+    const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: '© OpenTopoMap contributors' });
+    const toner = L.tileLayer('https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png', { attribution: 'Map tiles by Stamen Design' });
+    const watercolor = L.tileLayer('https://stamen-tiles.a.ssl.fastly.net/watercolor/{z}/{x}/{y}.jpg', { attribution: 'Map tiles by Stamen Design' });
+    const map = L.map('map', { center: [20, 0], zoom: 2, layers: [osm] });
+    const baseLayers = { "OpenStreetMap": osm, "OpenTopoMap": topo, "Stamen Toner": toner, "Stamen Watercolor": watercolor };
     L.control.layers(baseLayers).addTo(map);
     
-    // Add geocoder control.
-    L.Control.geocoder({
-      defaultMarkGeocode: false
-    })
-    .on('markgeocode', function(e) {
-      const bbox = e.geocode.bbox;
-      const poly = L.polygon([
-        [bbox.getSouthWest().lat, bbox.getSouthWest().lng],
-        [bbox.getNorthWest().lat, bbox.getNorthWest().lng],
-        [bbox.getNorthEast().lat, bbox.getNorthEast().lng],
-        [bbox.getSouthEast().lat, bbox.getSouthEast().lng]
-      ]);
-      map.fitBounds(poly.getBounds());
-    })
-    .addTo(map);
+    // Geocoder
+    L.Control.geocoder({ defaultMarkGeocode: false })
+      .on('markgeocode', function(e) {
+        const bbox = e.geocode.bbox;
+        const poly = L.polygon([
+          [bbox.getSouthWest().lat, bbox.getSouthWest().lng],
+          [bbox.getNorthWest().lat, bbox.getNorthWest().lng],
+          [bbox.getNorthEast().lat, bbox.getNorthEast().lng],
+          [bbox.getSouthEast().lat, bbox.getSouthEast().lng]
+        ]);
+        map.fitBounds(poly.getBounds());
+      })
+      .addTo(map);
     
-    // Add Leaflet.draw control.
+    // Draw-Control
     const drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
     const drawControl = new L.Control.Draw({
       edit: { featureGroup: drawnItems },
-      draw: {
-        polyline: false,
-        circle: false,
-        marker: false,
-        circlemarker: false
-      }
+      draw: { polyline: false, circle: false, marker: false, circlemarker: false }
     });
     map.addControl(drawControl);
-    map.on(L.Draw.Event.CREATED, function(e) {
+    map.on('draw:created', function(e) {
+      // Vorherige gezeichnete Shapes entfernen:
+      drawnItems.clearLayers();
       drawnItems.addLayer(e.layer);
-      // Remove custom rectangle if a shape is drawn.
       if (customRectangle) {
         map.removeLayer(customRectangle);
         customRectangle = null;
       }
     });
     
-    // Fetch continent mapping.
+    // Kontinent-Mapping laden.
     let continentMap = {};
     fetch('https://raw.githubusercontent.com/samayo/country-json/master/src/country-by-continent.json')
       .then(response => response.json())
       .then(data => {
-        data.forEach(item => {
-          continentMap[item.country] = item.continent;
-        });
+        data.forEach(item => { continentMap[item.country] = item.continent; });
       })
       .catch(error => console.error('Error loading continent mapping:', error));
     
-    // Load global GeoJSON dataset.
+    // GeoJSON laden und Länder gruppieren.
     fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
       .then(response => response.json())
       .then(data => {
@@ -236,7 +217,7 @@
             countryFeatures[countryName] = feature;
           }
         });
-        // Build dropdown with optgroups.
+        // Befülle das Länder-Dropdown in der Sidebar
         let countrySelect = document.getElementById('countrySelect');
         countrySelect.innerHTML = '<option value="">-- No Country (custom) --</option>';
         Object.keys(groups).sort().forEach(continent => {
@@ -254,8 +235,7 @@
       })
       .catch(error => console.error('Error loading GeoJSON:', error));
     
-    // When a country is selected, display its polygon (using chosen polygon color),
-    // update input fields, and fetch country info.
+    // Beim Auswählen eines Landes: Polygon anzeigen.
     document.getElementById('countrySelect').addEventListener('change', function() {
       const countryName = this.value;
       if (countryName && countryFeatures[countryName]) {
@@ -264,8 +244,8 @@
         if (customRectangle) { map.removeLayer(customRectangle); customRectangle = null; }
         countryLayer = L.geoJSON(selectedCountryFeature, {
           style: { 
-            color: document.getElementById('polygonColorPicker').value, 
-            weight: 2, 
+            color: document.getElementById('polygonColorPicker').value,
+            weight: 2,
             fillOpacity: parseFloat(document.getElementById('opacitySlider').value)
           }
         }).addTo(map);
@@ -275,7 +255,6 @@
         document.getElementById('lon_min').value = bounds.getWest().toFixed(2);
         document.getElementById('lon_max').value = bounds.getEast().toFixed(2);
         map.fitBounds(bounds);
-        // Fetch country info.
         fetch(`https://restcountries.com/v3.1/name/${encodeURIComponent(countryName)}?fullText=true`)
           .then(response => response.json())
           .then(infoData => {
@@ -296,15 +275,12 @@
           });
       } else {
         selectedCountryFeature = null;
-        if (countryLayer) {
-          map.removeLayer(countryLayer);
-          countryLayer = null;
-        }
+        if (countryLayer) { map.removeLayer(countryLayer); countryLayer = null; }
         document.getElementById('countryInfo').innerText = "Country Info: --";
       }
     });
     
-    // Function to generate a random point within a polygon using Turf.js.
+    // Zufallspunkt innerhalb eines Polygons generieren (Turf.js).
     function generateRandomPointInPolygon(feature) {
       const tempLayer = L.geoJSON(feature);
       const bounds = tempLayer.getBounds();
@@ -324,8 +300,7 @@
       return [coords[1], coords[0]];
     }
     
-    // Function to generate and add a new marker.
-    // Priority: drawn shape > selected country > custom bounding box.
+    // Zufallsmarker generieren (Priorität: Zeichnung > Land > Custom-Bounding-Box).
     function addRandomMarker() {
       let randomLat, randomLon;
       if (drawnItems.getLayers().length > 0) {
@@ -360,32 +335,24 @@
       document.getElementById('result').innerText = "Random Position: " + randomLat.toFixed(2) + ", " + randomLon.toFixed(2);
     }
     
-    // Function that clears all markers then generates a new marker.
     function generateRandomPositionClearingMarkers() {
       markers.forEach(m => map.removeLayer(m));
       markers = [];
       addRandomMarker();
     }
     
-    // Form submission: clear markers and generate a new marker.
     document.getElementById('coordinatesForm').addEventListener('submit', function(e) {
       e.preventDefault();
       generateRandomPositionClearingMarkers();
     });
-    
-    // "Add Random Position" button: adds a marker without clearing existing ones.
     document.getElementById('addMarkerBtn').addEventListener('click', function() {
       addRandomMarker();
     });
-    
-    // "Clear Markers" button: clears all markers.
     document.getElementById('clearMarkersBtn').addEventListener('click', function() {
       markers.forEach(m => map.removeLayer(m));
       markers = [];
       document.getElementById('result').innerText = "Random Position: --";
     });
-    
-    // "Reset Map" button: resets view, clears markers, drawn shapes, country info, and custom rectangle.
     document.getElementById('resetMapBtn').addEventListener('click', function() {
       map.setView([20, 0], 2);
       if (countryLayer) { map.removeLayer(countryLayer); countryLayer = null; }
@@ -395,28 +362,69 @@
       drawnItems.clearLayers();
       document.getElementById('result').innerText = "Random Position: --";
       document.getElementById('countryInfo').innerText = "Country Info: --";
-      document.getElementById('countrySelect').value = "";
     });
     
-    // Update polygon opacity when slider changes.
     document.getElementById('opacitySlider').addEventListener('input', function() {
       const val = this.value;
       document.getElementById('opacityVal').innerText = val;
       if (countryLayer) { countryLayer.setStyle({ fillOpacity: parseFloat(val) }); }
     });
     
-    // When polygon color picker changes, update the country layer and custom rectangle.
     document.getElementById('polygonColorPicker').addEventListener('input', function() {
       const newColor = this.value;
       if (countryLayer) { countryLayer.setStyle({ color: newColor }); }
       if (customRectangle) { customRectangle.setStyle({ color: newColor }); }
     });
     
-    // Display live mouse coordinates.
     map.on('mousemove', function(e) {
       document.getElementById('mouseCoordinates').innerText =
         'Mouse: ' + e.latlng.lat.toFixed(2) + ', ' + e.latlng.lng.toFixed(2);
     });
+    
+    /* --- Export der Marker als GeoJSON inklusive zusätzlicher Daten --- */
+    async function exportMarkersToGeoJSON() {
+      const features = await Promise.all(markers.map(async marker => {
+        const latlng = marker.getLatLng();
+        let props = {};
+        const popup = marker.getPopup();
+        if (popup) {
+          props.popup = popup.getContent();
+        }
+        // Reverse-Geocoding via Nominatim
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}`;
+        try {
+          const response = await fetch(url, { headers: { "User-Agent": "RandomMapPositionApp" }});
+          const data = await response.json();
+          if(data && data.address) {
+            props.address = data.address;
+          }
+        } catch (e) {
+          console.error("Reverse geocoding error:", e);
+        }
+        return {
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [latlng.lng, latlng.lat]
+          },
+          properties: props
+        };
+      }));
+      const geojson = {
+        type: "FeatureCollection",
+        features: features
+      };
+      const dataStr = "data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(geojson, null, 2));
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", "markers.geojson");
+      document.body.appendChild(downloadAnchorNode);
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+    }
+    
+    document.getElementById('exportGeoJSONBtn').addEventListener('click', exportMarkersToGeoJSON);
+  
   </script>
 </body>
 </html>
