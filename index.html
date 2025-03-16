@@ -96,7 +96,9 @@
       <button id="addMarkerBtn">Add Random Position</button>
       <button id="clearMarkersBtn">Clear Markers</button>
       <button id="resetMapBtn">Reset Map</button>
+      <!-- Zwei Export-Buttons, einer für GeoJSON, einer für CSV -->
       <button id="exportGeoJSONBtn" class="export-btn">Export as GeoJSON</button>
+      <button id="exportCSVBtn" class="export-btn">Export as CSV</button>
       <label>
         <input type="checkbox" id="includeAddress" checked> Include Reverse Geocoding
       </label>
@@ -172,9 +174,8 @@
       draw: { polyline: false, circle: false, marker: false, circlemarker: false }
     });
     map.addControl(drawControl);
-    // Statt beim Drawstart löschen, löschen wir erst beim "draw:created"
+    // Alte Flächen (Country-Shape und Custom-Rectangle) erst beim "draw:created" entfernen
     map.on('draw:created', function(e) {
-      // Entferne erst das vorherige Land (Country-Shape oder Custom-Rectangle)
       if (countryLayer) {
         map.removeLayer(countryLayer);
         countryLayer = null;
@@ -183,9 +184,7 @@
         map.removeLayer(customRectangle);
         customRectangle = null;
       }
-      // Lösche vorherige gezeichnete Shapes
       drawnItems.clearLayers();
-      // Füge die neue Zeichnung hinzu
       drawnItems.addLayer(e.layer);
     });
     
@@ -214,7 +213,6 @@
             countryFeatures[countryName] = feature;
           }
         });
-        // Länder-Dropdown in der Sidebar befüllen
         let countrySelect = document.getElementById('countrySelect');
         countrySelect.innerHTML = '<option value="">-- No Country (custom) --</option>';
         Object.keys(groups).sort().forEach(continent => {
@@ -232,7 +230,7 @@
       })
       .catch(error => console.error('Error loading GeoJSON:', error));
     
-    // Beim Auswählen eines Landes: Polygon anzeigen.
+    // Beim Auswählen eines Landes: Polygon anzeigen
     document.getElementById('countrySelect').addEventListener('change', function() {
       const countryName = this.value;
       if (countryName && countryFeatures[countryName]) {
@@ -385,9 +383,7 @@
         const latlng = marker.getLatLng();
         let props = {};
         const popup = marker.getPopup();
-        if (popup) {
-          props.popup = popup.getContent();
-        }
+        if (popup) { props.popup = popup.getContent(); }
         if (includeAddress) {
           const key = `${latlng.lat.toFixed(4)},${latlng.lng.toFixed(4)}`;
           if (reverseCache[key]) {
@@ -415,10 +411,7 @@
           properties: props
         };
       }));
-      const geojson = {
-        type: "FeatureCollection",
-        features: features
-      };
+      const geojson = { type: "FeatureCollection", features: features };
       const dataStr = "data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(geojson, null, 2));
       const downloadAnchorNode = document.createElement('a');
       downloadAnchorNode.setAttribute("href", dataStr);
@@ -428,7 +421,57 @@
       downloadAnchorNode.remove();
     }
     
+    async function exportMarkersToCSV() {
+      const includeAddress = document.getElementById('includeAddress').checked;
+      let csvContent = "latitude,longitude,popup";
+      if (includeAddress) {
+        csvContent += ",address";
+      }
+      csvContent += "\n";
+      
+      const rows = await Promise.all(markers.map(async marker => {
+        const latlng = marker.getLatLng();
+        let popupText = "";
+        const popup = marker.getPopup();
+        if (popup) { popupText = popup.getContent().replace(/"/g, '""'); }
+        let addressStr = "";
+        if (includeAddress) {
+          const key = `${latlng.lat.toFixed(4)},${latlng.lng.toFixed(4)}`;
+          if (reverseCache[key]) {
+            addressStr = JSON.stringify(reverseCache[key]).replace(/"/g, '""');
+          } else {
+            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}`;
+            try {
+              const response = await fetch(url, { headers: { "User-Agent": "RandomMapPositionApp" }});
+              const data = await response.json();
+              if (data && data.address) {
+                addressStr = JSON.stringify(data.address).replace(/"/g, '""');
+                reverseCache[key] = data.address;
+              }
+            } catch (e) {
+              console.error("Reverse geocoding error:", e);
+            }
+          }
+        }
+        let row = `${latlng.lat.toFixed(6)},${latlng.lng.toFixed(6)},"${popupText}"`;
+        if (includeAddress) {
+          row += `,"${addressStr}"`;
+        }
+        return row;
+      }));
+      
+      csvContent += rows.join("\n");
+      const dataStr = "data:text/csv;charset=utf-8," + encodeURIComponent(csvContent);
+      const downloadAnchorNode = document.createElement('a');
+      downloadAnchorNode.setAttribute("href", dataStr);
+      downloadAnchorNode.setAttribute("download", "markers.csv");
+      document.body.appendChild(downloadAnchorNode);
+      downloadAnchorNode.click();
+      downloadAnchorNode.remove();
+    }
+    
     document.getElementById('exportGeoJSONBtn').addEventListener('click', exportMarkersToGeoJSON);
+    document.getElementById('exportCSVBtn').addEventListener('click', exportMarkersToCSV);
   
   </script>
 </body>
