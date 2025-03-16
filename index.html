@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Random Map Position</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-  <!-- Choices.js CSS for a searchable dropdown -->
+  <!-- Choices.js CSS for searchable dropdown -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
   <style>
     body {
@@ -16,11 +16,13 @@
       display: flex;
       flex-direction: column;
     }
+    /* Container for the whole page */
     .container {
       display: flex;
       flex: 1;
       overflow: hidden;
     }
+    /* Sidebar for form and country selection */
     .sidebar {
       width: 300px;
       padding: 15px;
@@ -29,6 +31,7 @@
       overflow-y: auto;
       border-right: 1px solid #ccc;
     }
+    /* Map container */
     .map-container {
       flex: 1;
       position: relative;
@@ -40,6 +43,7 @@
       bottom: 0;
       left: 0;
     }
+    /* Additional elements */
     #result, #mouseCoordinates {
       margin-top: 10px;
       font-weight: bold;
@@ -47,6 +51,7 @@
     #mouseCoordinates {
       font-family: monospace;
     }
+    /* Form elements */
     label, input, select {
       display: block;
       margin-bottom: 10px;
@@ -63,14 +68,14 @@
 </head>
 <body>
   <div class="container">
-    <!-- Sidebar with inputs -->
+    <!-- Sidebar: Form and country selection -->
     <div class="sidebar">
       <h2>Random Map Position</h2>
       <form id="coordinatesForm">
         <div>
-          <label for="countrySelect">Select a Country:</label>
+          <label for="countrySelect">Select Country:</label>
           <select id="countrySelect">
-            <option value="">-- Custom (No country selected) --</option>
+            <option value="">-- No Country (custom) --</option>
           </select>
         </div>
         <div>
@@ -94,13 +99,13 @@
       <div id="result">Random Position: --</div>
       <div id="mouseCoordinates">Mouse: --</div>
     </div>
-    <!-- Map Container -->
+    <!-- Map container -->
     <div class="map-container">
       <div id="map"></div>
     </div>
   </div>
-
-  <!-- External Libraries -->
+  
+  <!-- External libraries -->
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
@@ -110,7 +115,7 @@
     let selectedCountryFeature = null;
     let countryLayer = null;
     
-    // Initialize map - global view
+    // Initialize map – global view
     const map = L.map('map').setView([20, 0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
@@ -121,30 +126,32 @@
       .then(response => response.json())
       .then(data => {
         worldGeojson = data;
-        let countryList = [];
+        // Build a flat array of countries
+        let countries = [];
         data.features.forEach(feature => {
           const countryName = feature.properties.ADMIN || feature.properties.name || feature.properties.admin || "";
           if (countryName.trim() !== "") {
-            countryList.push({ name: countryName, feature: feature });
+            countries.push({ name: countryName, feature: feature });
             countryFeatures[countryName] = feature;
           }
         });
-        // Sort alphabetically by country name
-        countryList.sort((a, b) => a.name.localeCompare(b.name));
+        // Sort alphabetically
+        countries.sort((a, b) => a.name.localeCompare(b.name));
+        // Populate the dropdown
         let countrySelect = document.getElementById('countrySelect');
-        countrySelect.innerHTML = '<option value="">-- Custom (No country selected) --</option>';
-        countryList.forEach(entry => {
+        countrySelect.innerHTML = '<option value="">-- No Country (custom) --</option>';
+        countries.forEach(entry => {
           let option = document.createElement('option');
           option.value = entry.name;
           option.textContent = entry.name;
           countrySelect.appendChild(option);
         });
-        // Initialize Choices.js for searchable dropdown
+        // Initialize Choices.js for a searchable dropdown
         new Choices(countrySelect, { searchEnabled: true, itemSelectText: '' });
       })
       .catch(error => console.error('Error loading GeoJSON:', error));
     
-    // When a country is selected: display its boundary and update input fields
+    // When a country is selected: display its polygon and update input fields
     document.getElementById('countrySelect').addEventListener('change', function() {
       const countryName = this.value;
       if (countryName && countryFeatures[countryName]) {
@@ -193,7 +200,7 @@
       return [coords[1], coords[0]];
     }
     
-    // Form submission: generate a random point within the selected boundary or the defined bounding box
+    // Form submission: generate a random point inside the selected polygon or within the bounding box
     document.getElementById('coordinatesForm').addEventListener('submit', function(e) {
       e.preventDefault();
       let randomLat, randomLon;
@@ -216,7 +223,7 @@
       document.getElementById('result').innerText = "Random Position: " + randomLat.toFixed(2) + ", " + randomLon.toFixed(2);
     });
     
-    // Display mouse coordinates in real-time
+    // Display live mouse coordinates (styled as desired)
     map.on('mousemove', function(e) {
       const lat = e.latlng.lat.toFixed(2);
       const lng = e.latlng.lng.toFixed(2);
