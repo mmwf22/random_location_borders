@@ -96,7 +96,6 @@
       <button id="addMarkerBtn">Add Random Position</button>
       <button id="clearMarkersBtn">Clear Markers</button>
       <button id="resetMapBtn">Reset Map</button>
-      <!-- Zwei Export-Buttons, einer für GeoJSON, einer für CSV -->
       <button id="exportGeoJSONBtn" class="export-btn">Export as GeoJSON</button>
       <button id="exportCSVBtn" class="export-btn">Export as CSV</button>
       <label>
@@ -138,12 +137,16 @@
     // In-Memory Cache für Reverse-Geocoding-Ergebnisse
     const reverseCache = {};
     
-    // Standard-Leaflet-Marker verwenden
+    // Hilfsfunktion für Delay (in ms) – hier 1000ms, um 1 Anfrage pro Sekunde zu gewährleisten
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    
     function createCustomMarker(lat, lon) {
       return L.marker([lat, lon]);
     }
     
-    // Map-Initialisierung
+    // Map initialisieren
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' });
     const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: '© OpenTopoMap contributors' });
     const toner = L.tileLayer('https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png', { attribution: 'Map tiles by Stamen Design' });
@@ -152,7 +155,7 @@
     const baseLayers = { "OpenStreetMap": osm, "OpenTopoMap": topo, "Stamen Toner": toner, "Stamen Watercolor": watercolor };
     L.control.layers(baseLayers).addTo(map);
     
-    // Geocoder
+    // Geocoder hinzufügen
     L.Control.geocoder({ defaultMarkGeocode: false })
       .on('markgeocode', function(e) {
         const bbox = e.geocode.bbox;
@@ -166,7 +169,7 @@
       })
       .addTo(map);
     
-    // Draw-Control
+    // Draw-Control hinzufügen
     const drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
     const drawControl = new L.Control.Draw({
@@ -174,7 +177,7 @@
       draw: { polyline: false, circle: false, marker: false, circlemarker: false }
     });
     map.addControl(drawControl);
-    // Alte Flächen (Country-Shape und Custom-Rectangle) erst beim "draw:created" entfernen
+    // Alte Flächen erst entfernen, wenn eine neue Zeichnung abgeschlossen ist
     map.on('draw:created', function(e) {
       if (countryLayer) {
         map.removeLayer(countryLayer);
@@ -295,7 +298,7 @@
       return [coords[1], coords[0]];
     }
     
-    // Zufallsmarker generieren (Priorität: Zeichnung > Land > benutzerdefinierte Bounding-Box).
+    // Zufallsmarker generieren (Priorität: Zeichnung > Land > benutzerdefinierte Bounding-Box)
     function addRandomMarker() {
       let randomLat, randomLon;
       if (drawnItems.getLayers().length > 0) {
@@ -396,6 +399,8 @@
               if (data && data.address) {
                 props.address = data.address;
                 reverseCache[key] = data.address;
+                // Delay von 1000ms, um Nominatim-Limits zu berücksichtigen
+                await delay(1000);
               }
             } catch (e) {
               console.error("Reverse geocoding error:", e);
@@ -424,9 +429,7 @@
     async function exportMarkersToCSV() {
       const includeAddress = document.getElementById('includeAddress').checked;
       let csvContent = "latitude,longitude,popup";
-      if (includeAddress) {
-        csvContent += ",address";
-      }
+      if (includeAddress) { csvContent += ",address"; }
       csvContent += "\n";
       
       const rows = await Promise.all(markers.map(async marker => {
@@ -447,6 +450,7 @@
               if (data && data.address) {
                 addressStr = JSON.stringify(data.address).replace(/"/g, '""');
                 reverseCache[key] = data.address;
+                await delay(1000);
               }
             } catch (e) {
               console.error("Reverse geocoding error:", e);
@@ -454,9 +458,7 @@
           }
         }
         let row = `${latlng.lat.toFixed(6)},${latlng.lng.toFixed(6)},"${popupText}"`;
-        if (includeAddress) {
-          row += `,"${addressStr}"`;
-        }
+        if (includeAddress) { row += `,"${addressStr}"`; }
         return row;
       }));
       
