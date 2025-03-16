@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Zufällige Länderposition generieren</title>
+  <title>Zufällige Kartenposition</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
   <style>
     body {
@@ -35,8 +35,7 @@
   <link rel="icon" type="image/x-icon" href="favicon.ico">
 </head>
 <body>
-  <!-- Allgemeiner Titel, der nicht nur Europa betont -->
-  <h1>Zufällige Länderposition generieren</h1>
+  <h1>Zufällige Kartenposition</h1>
   <form id="coordinatesForm">
     <div>
       <label for="countrySelect">Land auswählen (Europa):</label>
@@ -92,25 +91,26 @@
       .then(response => response.json())
       .then(data => {
         europeGeojson = data;
-        // Befülle das Dropdown-Menü mit Ländernamen
         const countrySelect = document.getElementById('countrySelect');
         data.features.forEach(feature => {
-          const countryName = feature.properties.name;
-          countryFeatures[countryName] = feature;
-          const option = document.createElement('option');
-          option.value = countryName;
-          option.textContent = countryName;
-          countrySelect.appendChild(option);
+          // Versuche, den Ländernamen aus verschiedenen Properties zu beziehen
+          const countryName = feature.properties.name || feature.properties.NAME || feature.properties.admin || "";
+          if (countryName.trim() !== "") {
+            countryFeatures[countryName] = feature;
+            const option = document.createElement('option');
+            option.value = countryName;
+            option.textContent = countryName;
+            countrySelect.appendChild(option);
+          }
         });
       })
       .catch(error => console.error('Fehler beim Laden der GeoJSON:', error));
     
-    // Bei Auswahl eines Landes: Anzeige der exakten Grenzen und Aktualisierung der Formulareingaben
+    // Bei Auswahl eines Landes: Zeige die exakte Kontur und aktualisiere die Eingabefelder
     document.getElementById('countrySelect').addEventListener('change', function() {
       const countryName = this.value;
       if (countryName && countryFeatures[countryName]) {
         selectedCountryFeature = countryFeatures[countryName];
-        // Vorherige Länderkontur entfernen
         if (countryLayer) {
           map.removeLayer(countryLayer);
         }
@@ -121,18 +121,15 @@
             fillOpacity: 0.1
           }
         }).addTo(map);
-        // Berechne die Grenzen (Bounds) der Länderkontur
         const bounds = countryLayer.getBounds();
         const latMin = bounds.getSouth().toFixed(2);
         const latMax = bounds.getNorth().toFixed(2);
         const lonMin = bounds.getWest().toFixed(2);
         const lonMax = bounds.getEast().toFixed(2);
-        // Aktualisiere die Eingabefelder
         document.getElementById('lat_min').value = latMin;
         document.getElementById('lat_max').value = latMax;
         document.getElementById('lon_min').value = lonMin;
         document.getElementById('lon_max').value = lonMax;
-        // Karte auf das Land zentrieren
         map.fitBounds(bounds);
       } else {
         selectedCountryFeature = null;
@@ -145,7 +142,6 @@
     
     // Funktion, um einen zufälligen Punkt innerhalb eines Polygons zu generieren
     function generateRandomPointInPolygon(feature) {
-      // Berechne die Bounding Box mithilfe von Leaflet
       const tempLayer = L.geoJSON(feature);
       const bounds = tempLayer.getBounds();
       const latMin = bounds.getSouth();
@@ -158,7 +154,6 @@
       do {
         const randomLat = Math.random() * (latMax - latMin) + latMin;
         const randomLon = Math.random() * (lonMax - lonMin) + lonMin;
-        // Turf erwartet Koordinaten im Format [lon, lat]
         point = turf.point([randomLon, randomLat]);
         tries++;
         if (tries > 1000) { break; }
@@ -168,7 +163,7 @@
       return [coords[1], coords[0]];
     }
     
-    // Formularverarbeitung: Erzeugt einen zufälligen Punkt – innerhalb der Länderkontur, falls gewählt
+    // Formularverarbeitung: Erzeugt einen zufälligen Punkt – innerhalb der ausgewählten Kontur oder der Bounding Box
     document.getElementById('coordinatesForm').addEventListener('submit', function(e) {
       e.preventDefault();
       
