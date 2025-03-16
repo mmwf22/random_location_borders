@@ -114,6 +114,7 @@
     let countryFeatures = {};
     let selectedCountryFeature = null;
     let countryLayer = null;
+    let customRectangle = null;
     
     // Initialize map – global view
     const map = L.map('map').setView([20, 0], 2);
@@ -157,6 +158,8 @@
       if (countryName && countryFeatures[countryName]) {
         selectedCountryFeature = countryFeatures[countryName];
         if (countryLayer) { map.removeLayer(countryLayer); }
+        // Remove custom rectangle if present
+        if (customRectangle) { map.removeLayer(customRectangle); customRectangle = null; }
         countryLayer = L.geoJSON(selectedCountryFeature, {
           style: { color: 'blue', weight: 2, fillOpacity: 0.1 }
         }).addTo(map);
@@ -206,6 +209,8 @@
       let randomLat, randomLon;
       if (selectedCountryFeature) {
         [randomLat, randomLon] = generateRandomPointInPolygon(selectedCountryFeature);
+        // Remove custom rectangle if it exists
+        if (customRectangle) { map.removeLayer(customRectangle); customRectangle = null; }
       } else {
         let latMin = parseFloat(document.getElementById('lat_min').value);
         let latMax = parseFloat(document.getElementById('lat_max').value);
@@ -213,6 +218,13 @@
         let lonMax = parseFloat(document.getElementById('lon_max').value);
         if (latMin > latMax) { [latMin, latMax] = [latMax, latMin]; }
         if (lonMin > lonMax) { [lonMin, lonMax] = [lonMax, lonMin]; }
+        // Draw a red rectangle for the custom bounding box
+        if (customRectangle) { map.removeLayer(customRectangle); }
+        customRectangle = L.rectangle([[latMin, lonMin], [latMax, lonMax]], {
+          color: 'red',
+          weight: 2,
+          fillOpacity: 0.2
+        }).addTo(map);
         randomLat = Math.random() * (latMax - latMin) + latMin;
         randomLon = Math.random() * (lonMax - lonMin) + lonMin;
       }
