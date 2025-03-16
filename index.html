@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Zufällige Kartenposition</title>
+  <title>Random Map Position</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-  <!-- Choices.js CSS für durchsuchbare Dropdowns -->
+  <!-- Choices.js CSS for a searchable dropdown -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
   <style>
     body {
@@ -16,13 +16,11 @@
       display: flex;
       flex-direction: column;
     }
-    /* Container für die gesamte Seite */
     .container {
       display: flex;
       flex: 1;
       overflow: hidden;
     }
-    /* Sidebar links für Formular und Auswahl */
     .sidebar {
       width: 300px;
       padding: 15px;
@@ -31,7 +29,6 @@
       overflow-y: auto;
       border-right: 1px solid #ccc;
     }
-    /* Rechte Seite für die Karte */
     .map-container {
       flex: 1;
       position: relative;
@@ -43,7 +40,6 @@
       bottom: 0;
       left: 0;
     }
-    /* Zusätzliche Elemente */
     #result, #mouseCoordinates {
       margin-top: 10px;
       font-weight: bold;
@@ -51,7 +47,6 @@
     #mouseCoordinates {
       font-family: monospace;
     }
-    /* Formularfelder */
     label, input, select {
       display: block;
       margin-bottom: 10px;
@@ -68,44 +63,44 @@
 </head>
 <body>
   <div class="container">
-    <!-- Sidebar links -->
+    <!-- Sidebar with inputs -->
     <div class="sidebar">
-      <h2>Zufällige Kartenposition</h2>
+      <h2>Random Map Position</h2>
       <form id="coordinatesForm">
         <div>
-          <label for="countrySelect">Land auswählen:</label>
+          <label for="countrySelect">Select a Country:</label>
           <select id="countrySelect">
-            <option value="">-- Kein Land (benutzerdefiniert) --</option>
+            <option value="">-- Custom (No country selected) --</option>
           </select>
         </div>
         <div>
-          <label for="lat_min">Minimale Breite (-90 bis 90):</label>
-          <input id="lat_min" type="number" step="0.01" name="lat_min" value="" required>
+          <label for="lat_min">Minimum Latitude (-90 to 90):</label>
+          <input id="lat_min" type="number" step="0.01" name="lat_min" value="-90" required>
         </div>
         <div>
-          <label for="lat_max">Maximale Breite (-90 bis 90):</label>
-          <input id="lat_max" type="number" step="0.01" name="lat_max" value="" required>
+          <label for="lat_max">Maximum Latitude (-90 to 90):</label>
+          <input id="lat_max" type="number" step="0.01" name="lat_max" value="90" required>
         </div>
         <div>
-          <label for="lon_min">Minimale Länge (-180 bis 180):</label>
-          <input id="lon_min" type="number" step="0.01" name="lon_min" value="" required>
+          <label for="lon_min">Minimum Longitude (-180 to 180):</label>
+          <input id="lon_min" type="number" step="0.01" name="lon_min" value="-180" required>
         </div>
         <div>
-          <label for="lon_max">Maximale Länge (-180 bis 180):</label>
-          <input id="lon_max" type="number" step="0.01" name="lon_max" value="" required>
+          <label for="lon_max">Maximum Longitude (-180 to 180):</label>
+          <input id="lon_max" type="number" step="0.01" name="lon_max" value="180" required>
         </div>
-        <button type="submit">Zufällige Position generieren</button>
+        <button type="submit">Generate Random Position</button>
       </form>
-      <div id="result">Zufällige Position: --</div>
+      <div id="result">Random Position: --</div>
       <div id="mouseCoordinates">Mouse: --</div>
     </div>
-    <!-- Map Container rechts -->
+    <!-- Map Container -->
     <div class="map-container">
       <div id="map"></div>
     </div>
   </div>
-  
-  <!-- Externe Bibliotheken -->
+
+  <!-- External Libraries -->
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
@@ -115,52 +110,41 @@
     let selectedCountryFeature = null;
     let countryLayer = null;
     
-    // Karte initialisieren – globale Ansicht
+    // Initialize map - global view
     const map = L.map('map').setView([20, 0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
     
-    // Lade globales GeoJSON-Dataset (alle Länder)
+    // Load global GeoJSON dataset (all countries)
     fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
       .then(response => response.json())
       .then(data => {
         worldGeojson = data;
-        let groups = {};
+        let countryList = [];
         data.features.forEach(feature => {
           const countryName = feature.properties.ADMIN || feature.properties.name || feature.properties.admin || "";
-          // Verwende CONTINENT, wenn vorhanden, sonst "Other"
-          const continent = feature.properties.CONTINENT || "Other";
           if (countryName.trim() !== "") {
-            if (!groups[continent]) groups[continent] = [];
-            groups[continent].push({ name: countryName, feature: feature });
+            countryList.push({ name: countryName, feature: feature });
             countryFeatures[countryName] = feature;
           }
         });
-        // Länder in jeder Gruppe alphabetisch sortieren
-        for (let cont in groups) {
-          groups[cont].sort((a, b) => a.name.localeCompare(b.name));
-        }
-        // Erstelle das Dropdown mit optgroup-Elementen
+        // Sort alphabetically by country name
+        countryList.sort((a, b) => a.name.localeCompare(b.name));
         let countrySelect = document.getElementById('countrySelect');
-        countrySelect.innerHTML = '<option value="">-- Kein Land (benutzerdefiniert) --</option>';
-        Object.keys(groups).sort().forEach(continent => {
-          let optgroup = document.createElement('optgroup');
-          optgroup.label = continent;
-          groups[continent].forEach(entry => {
-            let option = document.createElement('option');
-            option.value = entry.name;
-            option.textContent = entry.name;
-            optgroup.appendChild(option);
-          });
-          countrySelect.appendChild(optgroup);
+        countrySelect.innerHTML = '<option value="">-- Custom (No country selected) --</option>';
+        countryList.forEach(entry => {
+          let option = document.createElement('option');
+          option.value = entry.name;
+          option.textContent = entry.name;
+          countrySelect.appendChild(option);
         });
-        // Initialisiere Choices.js für durchsuchbares Dropdown
+        // Initialize Choices.js for searchable dropdown
         new Choices(countrySelect, { searchEnabled: true, itemSelectText: '' });
       })
-      .catch(error => console.error('Fehler beim Laden des GeoJSON:', error));
+      .catch(error => console.error('Error loading GeoJSON:', error));
     
-    // Beim Ändern der Länderauswahl: Zeige die exakte Kontur und aktualisiere die Eingabefelder
+    // When a country is selected: display its boundary and update input fields
     document.getElementById('countrySelect').addEventListener('change', function() {
       const countryName = this.value;
       if (countryName && countryFeatures[countryName]) {
@@ -188,7 +172,7 @@
       }
     });
     
-    // Funktion, um einen zufälligen Punkt innerhalb eines Polygons zu generieren
+    // Function to generate a random point within a polygon using Turf.js
     function generateRandomPointInPolygon(feature) {
       const tempLayer = L.geoJSON(feature);
       const bounds = tempLayer.getBounds();
@@ -209,7 +193,7 @@
       return [coords[1], coords[0]];
     }
     
-    // Formularverarbeitung: Erzeugt einen zufälligen Punkt – innerhalb der ausgewählten Kontur oder der Bounding Box
+    // Form submission: generate a random point within the selected boundary or the defined bounding box
     document.getElementById('coordinatesForm').addEventListener('submit', function(e) {
       e.preventDefault();
       let randomLat, randomLon;
@@ -227,12 +211,12 @@
       }
       if (window.randomMarker) { map.removeLayer(window.randomMarker); }
       window.randomMarker = L.marker([randomLat, randomLon]).addTo(map)
-        .bindPopup("Zufällige Position: " + randomLat.toFixed(2) + ", " + randomLon.toFixed(2))
+        .bindPopup("Random Position: " + randomLat.toFixed(2) + ", " + randomLon.toFixed(2))
         .openPopup();
-      document.getElementById('result').innerText = "Zufällige Position: " + randomLat.toFixed(2) + ", " + randomLon.toFixed(2);
+      document.getElementById('result').innerText = "Random Position: " + randomLat.toFixed(2) + ", " + randomLon.toFixed(2);
     });
     
-    // Anzeige der Mauskoordinaten in Echtzeit
+    // Display mouse coordinates in real-time
     map.on('mousemove', function(e) {
       const lat = e.latlng.lat.toFixed(2);
       const lng = e.latlng.lng.toFixed(2);
