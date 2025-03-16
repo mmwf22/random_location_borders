@@ -116,36 +116,60 @@
     let countryLayer = null;
     let customRectangle = null;
     
+    // Create a mapping from country name to continent using an external JSON.
+    // This JSON maps country names to continents.
+    let continentMap = {};
+    fetch('https://raw.githubusercontent.com/samayo/country-json/master/src/country-by-continent.json')
+      .then(response => response.json())
+      .then(data => {
+        data.forEach(item => {
+          continentMap[item.country] = item.continent;
+        });
+      })
+      .catch(error => console.error('Error loading continent mapping:', error));
+    
     // Initialize map – global view
     const map = L.map('map').setView([20, 0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
     
-    // Load global GeoJSON dataset (all countries)
+    // Load global GeoJSON dataset (all countries) from datasets/geo-countries
     fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
       .then(response => response.json())
       .then(data => {
         worldGeojson = data;
-        // Build a flat array of countries
-        let countries = [];
+        let groups = {};
         data.features.forEach(feature => {
-          const countryName = feature.properties.ADMIN || feature.properties.name || feature.properties.admin || "";
+          // Use ADMIN property as country name
+          const countryName = feature.properties.ADMIN || feature.properties.name || "";
+          // Look up continent using our mapping; if not found, use "Other"
+          const continent = continentMap[countryName] || "Other";
+          // Store the continent on the feature (for grouping later)
+          feature.properties.continent = continent;
           if (countryName.trim() !== "") {
-            countries.push({ name: countryName, feature: feature });
+            if (!groups[continent]) groups[continent] = [];
+            groups[continent].push({ name: countryName, feature: feature });
             countryFeatures[countryName] = feature;
           }
         });
-        // Sort alphabetically
-        countries.sort((a, b) => a.name.localeCompare(b.name));
-        // Populate the dropdown
+        // Sort countries in each group alphabetically
+        for (let cont in groups) {
+          groups[cont].sort((a, b) => a.name.localeCompare(b.name));
+        }
+        // Build the dropdown with optgroup elements
         let countrySelect = document.getElementById('countrySelect');
         countrySelect.innerHTML = '<option value="">-- No Country (custom) --</option>';
-        countries.forEach(entry => {
-          let option = document.createElement('option');
-          option.value = entry.name;
-          option.textContent = entry.name;
-          countrySelect.appendChild(option);
+        Object.keys(groups).sort().forEach(continent => {
+          let optgroup = document.createElement('optgroup');
+          optgroup.label = continent;
+          groups[continent].forEach(entry => {
+            let option = document.createElement('option');
+            option.value = entry.name;
+            option.textContent = entry.name;
+            optgroup.appendChild(option);
+          });
+          countrySelect.appendChild(optgroup);
         });
         // Initialize Choices.js for a searchable dropdown
         new Choices(countrySelect, { searchEnabled: true, itemSelectText: '' });
@@ -158,7 +182,7 @@
       if (countryName && countryFeatures[countryName]) {
         selectedCountryFeature = countryFeatures[countryName];
         if (countryLayer) { map.removeLayer(countryLayer); }
-        // Remove custom rectangle if present
+        // Remove any custom rectangle if present
         if (customRectangle) { map.removeLayer(customRectangle); customRectangle = null; }
         countryLayer = L.geoJSON(selectedCountryFeature, {
           style: { color: 'blue', weight: 2, fillOpacity: 0.1 }
@@ -209,7 +233,7 @@
       let randomLat, randomLon;
       if (selectedCountryFeature) {
         [randomLat, randomLon] = generateRandomPointInPolygon(selectedCountryFeature);
-        // Remove custom rectangle if it exists
+        // Remove any custom rectangle if present
         if (customRectangle) { map.removeLayer(customRectangle); customRectangle = null; }
       } else {
         let latMin = parseFloat(document.getElementById('lat_min').value);
@@ -235,7 +259,7 @@
       document.getElementById('result').innerText = "Random Position: " + randomLat.toFixed(2) + ", " + randomLon.toFixed(2);
     });
     
-    // Display live mouse coordinates (styled as desired)
+    // Display live mouse coordinates
     map.on('mousemove', function(e) {
       const lat = e.latlng.lat.toFixed(2);
       const lng = e.latlng.lng.toFixed(2);
