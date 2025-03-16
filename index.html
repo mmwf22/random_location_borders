@@ -21,13 +21,11 @@
       display: flex;
       flex-direction: column;
     }
-    /* Container for the whole page */
     .container {
       display: flex;
       flex: 1;
       overflow: hidden;
     }
-    /* Sidebar for form, controls, and info */
     .sidebar {
       width: 320px;
       padding: 15px;
@@ -36,10 +34,7 @@
       overflow-y: auto;
       border-right: 1px solid #ccc;
     }
-    .sidebar h2 {
-      margin-top: 0;
-    }
-    /* Map container */
+    .sidebar h2 { margin-top: 0; }
     .map-container {
       flex: 1;
       position: relative;
@@ -51,7 +46,6 @@
       bottom: 0;
       left: 0;
     }
-    /* Form elements & controls */
     label, input, select, button {
       display: block;
       margin-bottom: 10px;
@@ -62,21 +56,13 @@
       font-size: 1rem;
       cursor: pointer;
     }
-    .slider-group, .color-group {
-      margin-bottom: 15px;
-    }
-    .slider-group label, .color-group label {
-      margin-bottom: 5px;
-    }
-    /* Info panels */
+    .slider-group, .color-group { margin-bottom: 15px; }
+    .slider-group label, .color-group label { margin-bottom: 5px; }
     #result, #mouseCoordinates, #countryInfo {
       margin-top: 10px;
       font-weight: bold;
     }
-    #mouseCoordinates {
-      font-family: monospace;
-    }
-    /* Export Button */
+    #mouseCoordinates { font-family: monospace; }
     .export-btn {
       margin-top: 10px;
       background: #008CBA;
@@ -111,7 +97,9 @@
       <button id="clearMarkersBtn">Clear Markers</button>
       <button id="resetMapBtn">Reset Map</button>
       <button id="exportGeoJSONBtn" class="export-btn">Export as GeoJSON</button>
-      
+      <label>
+        <input type="checkbox" id="includeAddress" checked> Include Reverse Geocoding
+      </label>
       <div class="slider-group">
         <label for="opacitySlider">Polygon Opacity (0-1): <span id="opacityVal">0.1</span></label>
         <input id="opacitySlider" type="range" min="0" max="1" step="0.1" value="0.1">
@@ -120,7 +108,6 @@
         <label for="polygonColorPicker">Polygon Color:</label>
         <input id="polygonColorPicker" type="color" value="#0000ff">
       </div>
-      
       <div id="result">Random Position: --</div>
       <div id="mouseCoordinates">Mouse: --</div>
       <div id="countryInfo">Country Info: --</div>
@@ -146,7 +133,10 @@
     let customRectangle = null;
     let markers = [];
     
-    // Verwende den Standard-Leaflet-Marker.
+    // In-Memory Cache für Reverse-Geocoding-Ergebnisse
+    const reverseCache = {};
+    
+    // Standard-Leaflet-Marker verwenden
     function createCustomMarker(lat, lon) {
       return L.marker([lat, lon]);
     }
@@ -182,17 +172,24 @@
       draw: { polyline: false, circle: false, marker: false, circlemarker: false }
     });
     map.addControl(drawControl);
+    // Statt beim Drawstart löschen, löschen wir erst beim "draw:created"
     map.on('draw:created', function(e) {
-      // Vorherige gezeichnete Shapes entfernen:
-      drawnItems.clearLayers();
-      drawnItems.addLayer(e.layer);
+      // Entferne erst das vorherige Land (Country-Shape oder Custom-Rectangle)
+      if (countryLayer) {
+        map.removeLayer(countryLayer);
+        countryLayer = null;
+      }
       if (customRectangle) {
         map.removeLayer(customRectangle);
         customRectangle = null;
       }
+      // Lösche vorherige gezeichnete Shapes
+      drawnItems.clearLayers();
+      // Füge die neue Zeichnung hinzu
+      drawnItems.addLayer(e.layer);
     });
     
-    // Kontinent-Mapping laden.
+    // Kontinent-Mapping laden
     let continentMap = {};
     fetch('https://raw.githubusercontent.com/samayo/country-json/master/src/country-by-continent.json')
       .then(response => response.json())
@@ -201,7 +198,7 @@
       })
       .catch(error => console.error('Error loading continent mapping:', error));
     
-    // GeoJSON laden und Länder gruppieren.
+    // GeoJSON-Daten laden und Länder gruppieren
     fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
       .then(response => response.json())
       .then(data => {
@@ -217,7 +214,7 @@
             countryFeatures[countryName] = feature;
           }
         });
-        // Befülle das Länder-Dropdown in der Sidebar
+        // Länder-Dropdown in der Sidebar befüllen
         let countrySelect = document.getElementById('countrySelect');
         countrySelect.innerHTML = '<option value="">-- No Country (custom) --</option>';
         Object.keys(groups).sort().forEach(continent => {
@@ -280,7 +277,7 @@
       }
     });
     
-    // Zufallspunkt innerhalb eines Polygons generieren (Turf.js).
+    // Zufallspunkt innerhalb eines Polygons generieren (Turf.js)
     function generateRandomPointInPolygon(feature) {
       const tempLayer = L.geoJSON(feature);
       const bounds = tempLayer.getBounds();
@@ -300,7 +297,7 @@
       return [coords[1], coords[0]];
     }
     
-    // Zufallsmarker generieren (Priorität: Zeichnung > Land > Custom-Bounding-Box).
+    // Zufallsmarker generieren (Priorität: Zeichnung > Land > benutzerdefinierte Bounding-Box).
     function addRandomMarker() {
       let randomLat, randomLon;
       if (drawnItems.getLayers().length > 0) {
@@ -381,8 +378,9 @@
         'Mouse: ' + e.latlng.lat.toFixed(2) + ', ' + e.latlng.lng.toFixed(2);
     });
     
-    /* --- Export der Marker als GeoJSON inklusive zusätzlicher Daten --- */
+    /* --- Export der Marker als GeoJSON inklusive optionalem Reverse-Geocoding --- */
     async function exportMarkersToGeoJSON() {
+      const includeAddress = document.getElementById('includeAddress').checked;
       const features = await Promise.all(markers.map(async marker => {
         const latlng = marker.getLatLng();
         let props = {};
@@ -390,16 +388,23 @@
         if (popup) {
           props.popup = popup.getContent();
         }
-        // Reverse-Geocoding via Nominatim
-        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}`;
-        try {
-          const response = await fetch(url, { headers: { "User-Agent": "RandomMapPositionApp" }});
-          const data = await response.json();
-          if(data && data.address) {
-            props.address = data.address;
+        if (includeAddress) {
+          const key = `${latlng.lat.toFixed(4)},${latlng.lng.toFixed(4)}`;
+          if (reverseCache[key]) {
+            props.address = reverseCache[key];
+          } else {
+            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latlng.lat}&lon=${latlng.lng}`;
+            try {
+              const response = await fetch(url, { headers: { "User-Agent": "RandomMapPositionApp" }});
+              const data = await response.json();
+              if (data && data.address) {
+                props.address = data.address;
+                reverseCache[key] = data.address;
+              }
+            } catch (e) {
+              console.error("Reverse geocoding error:", e);
+            }
           }
-        } catch (e) {
-          console.error("Reverse geocoding error:", e);
         }
         return {
           type: "Feature",
