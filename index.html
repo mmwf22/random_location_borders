@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zufällige Länderposition generieren</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    form {
+      margin: 20px;
+    }
+    label, input, select {
+      margin: 5px;
+    }
+    #map {
+      width: 80%;
+      height: 500px;
+      margin: auto;
+      border: 1px solid #ccc;
+    }
+    #result, #mouseCoordinates {
+      margin: 10px;
+      font-weight: bold;
+    }
+    #mouseCoordinates {
+      font-family: monospace;
+    }
+  </style>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+</head>
+<body>
+  <!-- Allgemeiner Titel, der nicht nur Europa betont -->
+  <h1>Zufällige Länderposition generieren</h1>
+  <form id="coordinatesForm">
+    <div>
+      <label for="countrySelect">Land auswählen (Europa):</label>
+      <select id="countrySelect">
+        <option value="">-- Kein Land (benutzerdefiniert) --</option>
+      </select>
+    </div>
+    <div>
+      <label>
+        Minimale Breite (-90 bis 90):
+        <input id="lat_min" type="number" step="0.01" name="lat_min" value="" required>
+      </label>
+      <label>
+        Maximale Breite (-90 bis 90):
+        <input id="lat_max" type="number" step="0.01" name="lat_max" value="" required>
+      </label>
+    </div>
+    <div>
+      <label>
+        Minimale Länge (-180 bis 180):
+        <input id="lon_min" type="number" step="0.01" name="lon_min" value="" required>
+      </label>
+      <label>
+        Maximale Länge (-180 bis 180):
+        <input id="lon_max" type="number" step="0.01" name="lon_max" value="" required>
+      </label>
+    </div>
+    <button type="submit">Zufällige Position generieren</button>
+  </form>
+  
+  <div id="map"></div>
+  <div id="mouseCoordinates">Mouse: --</div>
+  <p id="result"></p>
+  
+  <!-- Leaflet -->
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <!-- Turf.js zur Überprüfung, ob ein Punkt in einem Polygon liegt -->
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <script>
+    let europeGeojson = null;
+    let countryFeatures = {};
+    let selectedCountryFeature = null;
+    let countryLayer = null;
+    
+    // Karte initialisieren – Mittelpunkt in Europa
+    const map = L.map('map').setView([54, 15], 4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+    
+    // Lade GeoJSON-Daten der europäischen Länder
+    fetch('https://raw.githubusercontent.com/leakyMirror/map-of-europe/master/GeoJSON/europe.geojson')
+      .then(response => response.json())
+      .then(data => {
+        europeGeojson = data;
+        // Befülle das Dropdown-Menü mit Ländernamen
+        const countrySelect = document.getElementById('countrySelect');
+        data.features.forEach(feature => {
+          const countryName = feature.properties.name;
+          countryFeatures[countryName] = feature;
+          const option = document.createElement('option');
+          option.value = countryName;
+          option.textContent = countryName;
+          countrySelect.appendChild(option);
+        });
+      })
+      .catch(error => console.error('Fehler beim Laden der GeoJSON:', error));
+    
+    // Bei Auswahl eines Landes: Anzeige der exakten Grenzen und Aktualisierung der Formulareingaben
+    document.getElementById('countrySelect').addEventListener('change', function() {
+      const countryName = this.value;
+      if (countryName && countryFeatures[countryName]) {
+        selectedCountryFeature = countryFeatures[countryName];
+        // Vorherige Länderkontur entfernen
+        if (countryLayer) {
+          map.removeLayer(countryLayer);
+        }
+        countryLayer = L.geoJSON(selectedCountryFeature, {
+          style: {
+            color: 'blue',
+            weight: 2,
+            fillOpacity: 0.1
+          }
+        }).addTo(map);
+        // Berechne die Grenzen (Bounds) der Länderkontur
+        const bounds = countryLayer.getBounds();
+        const latMin = bounds.getSouth().toFixed(2);
+        const latMax = bounds.getNorth().toFixed(2);
+        const lonMin = bounds.getWest().toFixed(2);
+        const lonMax = bounds.getEast().toFixed(2);
+        // Aktualisiere die Eingabefelder
+        document.getElementById('lat_min').value = latMin;
+        document.getElementById('lat_max').value = latMax;
+        document.getElementById('lon_min').value = lonMin;
+        document.getElementById('lon_max').value = lonMax;
+        // Karte auf das Land zentrieren
+        map.fitBounds(bounds);
+      } else {
+        selectedCountryFeature = null;
+        if (countryLayer) {
+          map.removeLayer(countryLayer);
+          countryLayer = null;
+        }
+      }
+    });
+    
+    // Funktion, um einen zufälligen Punkt innerhalb eines Polygons zu generieren
+    function generateRandomPointInPolygon(feature) {
+      // Berechne die Bounding Box mithilfe von Leaflet
+      const tempLayer = L.geoJSON(feature);
+      const bounds = tempLayer.getBounds();
+      const latMin = bounds.getSouth();
+      const latMax = bounds.getNorth();
+      const lonMin = bounds.getWest();
+      const lonMax = bounds.getEast();
+      
+      let point;
+      let tries = 0;
+      do {
+        const randomLat = Math.random() * (latMax - latMin) + latMin;
+        const randomLon = Math.random() * (lonMax - lonMin) + lonMin;
+        // Turf erwartet Koordinaten im Format [lon, lat]
+        point = turf.point([randomLon, randomLat]);
+        tries++;
+        if (tries > 1000) { break; }
+      } while (!turf.booleanPointInPolygon(point, feature));
+      
+      const coords = point.geometry.coordinates;
+      return [coords[1], coords[0]];
+    }
+    
+    // Formularverarbeitung: Erzeugt einen zufälligen Punkt – innerhalb der Länderkontur, falls gewählt
+    document.getElementById('coordinatesForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      let randomLat, randomLon;
+      if (selectedCountryFeature) {
+        [randomLat, randomLon] = generateRandomPointInPolygon(selectedCountryFeature);
+      } else {
+        let latMin = parseFloat(document.getElementById('lat_min').value);
+        let latMax = parseFloat(document.getElementById('lat_max').value);
+        let lonMin = parseFloat(document.getElementById('lon_min').value);
+        let lonMax = parseFloat(document.getElementById('lon_max').value);
+        if (latMin > latMax) { [latMin, latMax] = [latMax, latMin]; }
+        if (lonMin > lonMax) { [lonMin, lonMax] = [lonMax, lonMin]; }
+        randomLat = Math.random() * (latMax - latMin) + latMin;
+        randomLon = Math.random() * (lonMax - lonMin) + lonMin;
+      }
+      
+      if (window.randomMarker) {
+        map.removeLayer(window.randomMarker);
+      }
+      
+      window.randomMarker = L.marker([randomLat, randomLon]).addTo(map)
+        .bindPopup("Zufällige Position: " + randomLat.toFixed(2) + ", " + randomLon.toFixed(2))
+        .openPopup();
+      
+      document.getElementById('result').innerText = "Zufällige Position: " + randomLat.toFixed(2) + ", " + randomLon.toFixed(2);
+    });
+    
+    // Anzeige der Mauskoordinaten in Echtzeit
+    map.on('mousemove', function(e) {
+      const lat = e.latlng.lat.toFixed(2);
+      const lng = e.latlng.lng.toFixed(2);
+      document.getElementById('mouseCoordinates').innerText = 'Mouse: ' + lat + ', ' + lng;
+    });
+  </script>
+</body>
+</html>
